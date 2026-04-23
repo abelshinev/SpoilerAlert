@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-dotenv
+opencv-python-headless
+numpy
+scipy
+firebase-admin
+aiosqlite
+python-multipart
+pydantic-settings
