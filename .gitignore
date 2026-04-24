@@ -1,1 +1,4 @@
 .env*
+spoileralert*.json
+__pycache__
+app/__pycache__/
