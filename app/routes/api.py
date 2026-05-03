@@ -7,23 +7,24 @@ router = APIRouter(prefix="/api", tags=["api"])
 
 @router.get("/status")
 def get_status():
+    if latest_ml_data:
+        return latest_ml_data
+
     return {
-        "status": random.choice(["Fresh", "Attention", "Spoiling", "Spoiled"]),
-        "confidence": round(random.uniform(0.7, 0.95), 2)
+        "status": "Fresh",
+        "confidence": 0.9
     }
 
 
 @router.get("/trend")
 def get_trend():
+    if history:
+        return {"points": history}
+
     return {
         "points": [
             {"day": "Mon", "value": 1},
-            {"day": "Tue", "value": 3},
-            {"day": "Wed", "value": 0},
-            {"day": "Thu", "value": 1},
-            {"day": "Fri", "value": 2},
-            {"day": "Sat", "value": 3},
-            {"day": "Sun", "value": 4},
+            {"day": "Tue", "value": 2},
         ]
     }
 
@@ -49,3 +50,36 @@ def get_device_status():
         "is_online": True,
         "last_seen": str(datetime.now())
     }
+
+@router.post("/ml-update")
+def update_from_ml(data: dict):
+    global latest_ml_data, history
+
+    hours_remaining = data.get("hours_remaining", 0)
+
+    # Apply your rule
+    if hours_remaining > 24:
+        status = "Fresh"
+        value = 0
+    elif hours_remaining > 6:
+        status = "Spoiling"
+        value = 2
+    else:
+        status = "Spoiled"
+        value = 4
+
+    latest_ml_data = {
+        "status": status,
+        "confidence": data.get("confidence", 0.0),
+        "timestamp": str(datetime.now())
+    }
+
+    # Save for graph (last 7 points)
+    history.append({
+        "day": datetime.now().strftime("%a"),
+        "value": value
+    })
+
+    history = history[-7:]  # keep last 7
+
+    return {"message": "ML data updated"}
