@@ -1,10 +1,12 @@
 fastapi
 uvicorn
 python-dotenv
-opencv-python-headless
+opencv-python
 numpy
 scipy
 firebase-admin
 aiosqlite
 python-multipart
 pydantic-settings
+scikit-learn
+joblib
