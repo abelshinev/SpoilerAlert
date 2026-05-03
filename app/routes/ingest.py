@@ -111,23 +111,32 @@ async def ingest_image(
         grouped = defaultdict(dict)
 
         for r in rows:
-            ts = r[3]
+            ts_dt = datetime.fromisoformat(r[3])
+            ts = ts_dt.replace(microsecond=0)
             grouped[ts][r[2]] = r[13]
 
         history = []
         for ts, data in grouped.items():
             if all(k in data for k in ["BCG", "BTB", "KMNO4"]):
                 history.append({
-                    "timestamp": datetime.fromisoformat(ts),
+                    "timestamp": ts,
                     "BCG_score": data["BCG"],
                     "BTB_score": data["BTB"],
                     "KMNO4_score": data["KMNO4"]
                 })
 
         history.sort(key=lambda x: x["timestamp"])
+        print("\n==== DEBUG HISTORY ====")
+        print("Raw rows:", len(rows))
+        print("Grouped keys:", len(grouped))
+        print("Final history:", len(history))
 
+        for h in history:
+            print(h)
+            
     # 5. Predict spoilage
     prediction_result = predict_spoilage(history, food_category)
+    print("Method: ", prediction_result['method'])
 
     # 6. Insert prediction into database
     now_str = datetime.now().isoformat()
