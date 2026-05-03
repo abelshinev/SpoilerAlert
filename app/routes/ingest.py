@@ -41,7 +41,7 @@ async def ingest_image(
         safe_filename = f"{device_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{Path(image.filename).name}"
         save_path = save_dir / safe_filename
         save_path.write_bytes(contents)
-    print(f"[IMAGE SAVED] {save_path}")
+        print(f"[IMAGE SAVED] {save_path}")
     # 2. Extract colors using ML pipeline
     sticker_readings = ml_pipeline.extract_colors(img)
 
