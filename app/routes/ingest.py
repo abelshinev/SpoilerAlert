@@ -3,12 +3,14 @@ import cv2
 import numpy as np
 import aiosqlite
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Any
+from collections import defaultdict
 
 from app.database import get_db
-from app import ml_pipeline
+import model.ml_pipeline as ml_pipeline
 from app.notifications import send_spoilage_notification
-from app.predictor import predict_spoilage_local
+from model.spoilage_predictor import predict_spoilage
 from app.config import settings
 
 router = APIRouter()
@@ -33,8 +35,41 @@ async def ingest_image(
     if img is None:
         raise HTTPException(status_code=400, detail="Invalid image data")
 
+    if settings.SAVE_UPLOADED_IMAGES:
+        save_dir = Path(settings.UPLOAD_SAVE_PATH)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        safe_filename = f"{device_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{Path(image.filename).name}"
+        save_path = save_dir / safe_filename
+        save_path.write_bytes(contents)
+
     # 2. Extract colors using ML pipeline
     sticker_readings = ml_pipeline.extract_colors(img)
+
+    if settings.SIMULATE_PROGRESS:
+        try:
+            ts_dt = datetime.fromisoformat(timestamp)
+            # Use hours as progression signal
+            progress = (ts_dt.hour % 24) / 24.0
+        except:
+            progress = 0.0
+
+        print(f"[SIMULATION] Progress factor: {progress:.2f}")
+
+        for k in sticker_readings:
+            base = sticker_readings[k]["spoilage_score"]
+            
+            # Controlled increase (NOT full override)
+            new_score = min(1.0, base + 0.6 * progress)
+
+            print(f"[SIM] {k}: {base:.3f} → {new_score:.3f}")
+
+            sticker_readings[k]["spoilage_score"] = new_score
+            
+    if settings.DEBUG_LOGGING:
+        print("FINAL SCORES:", {
+            k: sticker_readings[k]["spoilage_score"]
+            for k in sticker_readings
+        })
 
     # 3. Look up the active food item for this device
     async with db.execute(
@@ -73,22 +108,26 @@ async def ingest_image(
     ) as cursor:
         rows = await cursor.fetchall()
         
-        history = []
+        grouped = defaultdict(dict)
+
         for r in rows:
-            history.append({
-                "sticker_type": r[2],
-                "timestamp": r[3],
-                "R": r[4], "G": r[5], "B": r[6],
-                "H": r[7], "S": r[8], "V": r[9],
-                "L_star": r[10], "a_star": r[11], "b_star": r[12],
-                "spoilage_score": r[13]
-            })
+            ts = r[3]
+            grouped[ts][r[2]] = r[13]
+
+        history = []
+        for ts, data in grouped.items():
+            if all(k in data for k in ["BCG", "BTB", "KMNO4"]):
+                history.append({
+                    "timestamp": datetime.fromisoformat(ts),
+                    "BCG_score": data["BCG"],
+                    "BTB_score": data["BTB"],
+                    "KMNO4_score": data["KMNO4"]
+                })
+
+        history.sort(key=lambda x: x["timestamp"])
 
     # 5. Predict spoilage
-    if settings.IS_ML_STUB:
-        prediction_result = predict_spoilage_local(history, food_category)
-    else:
-        prediction_result = ml_pipeline.predict_spoilage(history, food_category)
+    prediction_result = predict_spoilage(history, food_category)
 
     # 6. Insert prediction into database
     now_str = datetime.now().isoformat()
@@ -100,7 +139,7 @@ async def ingest_image(
         (
             item_id, 
             now_str, 
-            prediction_result["predicted_spoil_by"].isoformat(),
+            prediction_result["predicted_spoil_by"],
             prediction_result["confidence"], 
             prediction_result["method"]
         )

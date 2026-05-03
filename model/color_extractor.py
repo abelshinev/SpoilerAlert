@@ -15,16 +15,16 @@ KMNO4_HUE_FRESH = 310      # magenta (fresh)
 KMNO4_HUE_SPOILED = 25     # brown (spoiled)
 BORDER_TRIM = 5
 
-# Attempt to load score_config.json from current directory or parent directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 def load_score_config():
-    paths = ["score_config.json", os.path.join("..", "score_config.json")]
-    for path in paths:
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
+    path = os.path.join(BASE_DIR, "score_config.json")
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
     return None
 
 SCORE_CONFIG = load_score_config()
@@ -53,15 +53,13 @@ def extract_colors(image: np.ndarray) -> dict:
     """
     # Load sticker_config.json
     sticker_config = None
-    sticker_paths = ["sticker_config.json", os.path.join("..", "sticker_config.json")]
-    for path in sticker_paths:
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    sticker_config = json.load(f)
-                    break
-            except Exception:
-                pass
+    path = os.path.join(BASE_DIR, "sticker_config.json")
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                sticker_config = json.load(f)
+        except Exception:
+            pass
     
     if not sticker_config:
         return {}
@@ -137,6 +135,18 @@ def extract_colors(image: np.ndarray) -> dict:
             "L_star": float(L_star), "a_star": float(a_star), "b_star": float(b_star),
             "spoilage_score": spoilage_score
         }
+        try:
+            from app.config import settings
+            debug_logging = settings.DEBUG_LOGGING
+        except ImportError:
+            debug_logging = False
+
+        if debug_logging:
+            print(f"\n=== {name} data ===")
+            print(f"BGR: {B}, {G}, {R}")
+            print(f"HSV: H={H_360:.1f}, S={S}, V={V}")
+            print(f"LAB: L={L_star}, a={a_star}, b={b_star}")
+            print(f"Spoilage Score: {spoilage_score:.3f}")
 
     return results
 
