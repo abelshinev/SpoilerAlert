@@ -63,12 +63,28 @@ async def ingest_image(
     # 2. Extract colors using ML pipeline
     sticker_readings = ml_pipeline.extract_colors(img)
 
+    # 3. Look up the active food item for this device
+    async with db.execute(
+        "SELECT item_id, label, food_category FROM food_items WHERE device_id = ? AND is_active = 1 LIMIT 1",
+        (device_id,)
+    ) as cursor:
+        item = await cursor.fetchone()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="No active food item found for this device")
+    
+    item_id, label, food_category = item
+
+    # Get number of past readings to drive simulation correctly
+    async with db.execute(
+        "SELECT COUNT(DISTINCT timestamp) FROM color_readings WHERE item_id = ?", 
+        (item_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        history_length = row[0] if row else 0
+
     if settings.SIMULATE_PROGRESS:
-        try:
-            # Use hours as progression signal
-            progress = (timestamp_dt.hour % 24) / 24.0
-        except:
-            progress = 0.0
+        progress = min(1.0, (history_length + 1) * 0.15)
 
         print(f"[SIMULATION] Progress factor: {progress:.2f}")
 
@@ -87,18 +103,6 @@ async def ingest_image(
             k: sticker_readings[k]["spoilage_score"]
             for k in sticker_readings
         })
-
-    # 3. Look up the active food item for this device
-    async with db.execute(
-        "SELECT item_id, label, food_category FROM food_items WHERE device_id = ? AND is_active = 1 LIMIT 1",
-        (device_id,)
-    ) as cursor:
-        item = await cursor.fetchone()
-    
-    if not item:
-        raise HTTPException(status_code=404, detail="No active food item found for this device")
-    
-    item_id, label, food_category = item
 
     # 3b. Insert color readings into database
     for sticker_type, data in sticker_readings.items():
