@@ -81,6 +81,7 @@ async def get_trend(db: aiosqlite.Connection = Depends(get_db)):
     ) as cursor:
         rows = await cursor.fetchall()
 
+    rows.reverse()
     points = []
 
     for r in rows:
