@@ -15,6 +15,20 @@ from app.config import settings
 
 router = APIRouter()
 
+def parse_timestamp(ts_raw):
+    try:
+        # Case 1: already ISO
+        if isinstance(ts_raw, str) and "T" in ts_raw:
+            return datetime.fromisoformat(ts_raw)   
+
+        # Case 2: millis (ESP)
+        ts_int = int(ts_raw)
+        return datetime.fromtimestamp(ts_int / 1000)
+
+    except Exception as e:
+        print(f"[WARN] Invalid timestamp received: {ts_raw}")
+        return datetime.now()
+
 # Notification logic handled by app.notifications
 
 @router.post("/ingest")
@@ -24,6 +38,10 @@ async def ingest_image(
     image: UploadFile = File(...),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    timestamp_dt = parse_timestamp(timestamp)
+    timestamp_str = timestamp_dt.isoformat()
+    print(f"[INGEST] Parsed timestamp: {timestamp_dt}")
+
     # 1. Read and decode image
     try:
         contents = await image.read()
@@ -47,9 +65,8 @@ async def ingest_image(
 
     if settings.SIMULATE_PROGRESS:
         try:
-            ts_dt = datetime.fromisoformat(timestamp)
             # Use hours as progression signal
-            progress = (ts_dt.hour % 24) / 24.0
+            progress = (timestamp_dt.hour % 24) / 24.0
         except:
             progress = 0.0
 
@@ -93,7 +110,7 @@ async def ingest_image(
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                item_id, sticker_type, timestamp,
+                item_id, sticker_type, timestamp_str,
                 data["R"], data["G"], data["B"], data["H"], data["S"], data["V"],
                 data["L_star"], data["a_star"], data["b_star"], data["spoilage_score"]
             )
@@ -111,13 +128,13 @@ async def ingest_image(
         grouped = defaultdict(dict)
 
         for r in rows:
-            ts_dt = None
+            ts_dt_db = None
             try:
                 if isinstance(r[3], str):
-                    ts_dt = datetime.fromisoformat(r[3])
+                    ts_dt_db = datetime.fromisoformat(r[3])
                 else:
-                    ts_dt = r[3]
-                ts = ts_dt.replace(microsecond=0)
+                    ts_dt_db = r[3]
+                ts = ts_dt_db.replace(second=0, microsecond=0)
                 grouped[ts][r[2]] = r[13]
             except Exception as e:
                 print(f"[WARN] Bad timestamp in DB: {r[3]}")
@@ -145,10 +162,16 @@ async def ingest_image(
             
     # 5. Predict spoilage
     prediction_result = predict_spoilage(history, food_category)
-    print("Method: ", prediction_result['method'])
+    print(">>> PREDICTION EXECUTED <<<")
+    print("Method:", prediction_result['method'])
 
     # 6. Insert prediction into database
     now_str = datetime.now().isoformat()
+    
+    predicted_spoil_by = prediction_result["predicted_spoil_by"]
+    if hasattr(predicted_spoil_by, "isoformat"):
+        predicted_spoil_by = predicted_spoil_by.isoformat()
+
     await db.execute(
         """
         INSERT INTO predictions (item_id, predicted_at, predicted_spoil_by, confidence, method)
@@ -157,7 +180,7 @@ async def ingest_image(
         (
             item_id, 
             now_str, 
-            prediction_result["predicted_spoil_by"],
+            predicted_spoil_by,
             prediction_result["confidence"], 
             prediction_result["method"]
         )
