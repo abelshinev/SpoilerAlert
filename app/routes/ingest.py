@@ -38,7 +38,7 @@ async def ingest_image(
     image: UploadFile = File(...),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    timestamp_dt = parse_timestamp(timestamp)
+    timestamp_dt = datetime.now()
     timestamp_str = timestamp_dt.isoformat()
     print(f"[INGEST] Parsed timestamp: {timestamp_dt}")
 
