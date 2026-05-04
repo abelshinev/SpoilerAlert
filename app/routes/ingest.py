@@ -111,7 +111,10 @@ async def ingest_image(
         grouped = defaultdict(dict)
 
         for r in rows:
-            ts_dt = datetime.fromisoformat(r[3])
+            if isinstance(r[3], str):
+                ts_dt = datetime.fromisoformat(r[3])
+            else:
+                ts_dt = r[3]
             ts = ts_dt.replace(microsecond=0)
             grouped[ts][r[2]] = r[13]
 
