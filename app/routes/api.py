@@ -1,6 +1,10 @@
 from fastapi import APIRouter
 from datetime import datetime
 import random
+from app.database import get_db
+from fastapi import Depends
+import aiosqlite
+
 
 user_settings = {
     "alert_level": "Spoiling",
@@ -42,51 +46,64 @@ def update_settings(data: dict):
 
 
 @router.get("/status")
-def get_status():
-    if latest_ml_data:
-        return latest_ml_data
+async def get_status(db: aiosqlite.Connection = Depends(get_db)):
+    async with db.execute(
+        "SELECT predicted_spoil_by, confidence, method FROM predictions ORDER BY predicted_at DESC LIMIT 1"
+    ) as cursor:
+        row = await cursor.fetchone()
+
+    if not row:
+        return {"status": "Fresh", "confidence": 0.9}
+
+    predicted_spoil_by, confidence, method = row
+
+    # compute hours remaining
+    spoil_time = datetime.fromisoformat(predicted_spoil_by)
+    hours_remaining = (spoil_time - datetime.now()).total_seconds() / 3600
+
+    if hours_remaining > 24:
+        status = "Fresh"
+    elif hours_remaining > 6:
+        status = "Spoiling"
+    else:
+        status = "Spoiled"
 
     return {
-        "status": "Fresh",
-        "confidence": 0.9
+        "status": status,
+        "confidence": confidence,
+        "hours_remaining": round(hours_remaining, 2)
     }
-
 
 @router.get("/trend")
-def get_trend():
-    global history
+async def get_trend(db: aiosqlite.Connection = Depends(get_db)):
+    async with db.execute(
+        "SELECT predicted_at, predicted_spoil_by FROM predictions ORDER BY predicted_at DESC LIMIT 7"
+    ) as cursor:
+        rows = await cursor.fetchall()
 
-    # 🔹 Ensure history is always a list
-    if not isinstance(history, list):
-        history = []
+    points = []
 
-    # 🔹 If empty, return safe empty structure
-    if len(history) == 0:
-        return {
-            "points": []
-        }
+    for r in rows:
+        predicted_at, predicted_spoil_by = r
 
-    # 🔹 Keep only last 7 entries (weekly view)
-    trimmed = history[-7:]
+        spoil_time = datetime.fromisoformat(predicted_spoil_by)
+        pred_time = datetime.fromisoformat(predicted_at)
 
-    # 🔹 Ensure each point has correct format
-    safe_points = []
-    for point in trimmed:
-        try:
-            safe_points.append({
-                "day": str(point.get("day", "")),
-                "value": int(point.get("value", 0))
-            })
-        except Exception:
-            # fallback in case of bad data
-            safe_points.append({
-                "day": "N/A",
-                "value": 0
-            })
+        hours_remaining = (spoil_time - datetime.now()).total_seconds() / 3600
 
-    return {
-        "points": safe_points
-    }
+        if hours_remaining > 24:
+            value = 0
+        elif hours_remaining > 6:
+            value = 2
+        else:
+            value = 4
+
+        points.append({
+            "day": datetime.fromisoformat(predicted_at).strftime("%a"),
+            "value": value
+        })
+
+    return {"points": points}
 
 @router.get("/notifications")
 def get_notifications():
