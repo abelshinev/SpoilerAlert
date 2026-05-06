@@ -1,6 +1,7 @@
-# Spoiler Alert
+# Spoiler Alert Backend
 
-This is the code for the Backend API of the Spoiler Alert project.
+This directory contains the FastAPI backend for the Spoiler Alert project. 
+It serves as the central API, handling client requests, managing the database, and integrating the food spoilage machine learning pipeline to analyze sticker images and estimate remaining shelf life.
 
 To run this project run 
 
